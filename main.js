@@ -69,7 +69,8 @@ var TableColumnResizerPlugin = class extends import_obsidian.Plugin {
       document.removeEventListener("mouseup", this.handleMouseUp);
       if (this.currentTable) {
         this.currentTable.removeAttribute("data-resizing");
-        this.saveTableColumnWidths(this.currentTable);
+        // 异步保存列宽设置
+        this.saveTableColumnWidths(this.currentTable).catch(console.error);
       }
       document.body.classList.remove("table-resizing");
       this.currentTable = null;
@@ -78,6 +79,8 @@ var TableColumnResizerPlugin = class extends import_obsidian.Plugin {
   }
   async onload() {
     await this.loadSettings();
+    // 初始化数据缓存，确保在表格处理前数据已加载
+    await this.initDataCache();
     console.log("\u52A0\u8F7D\u8868\u683C\u5217\u5BBD\u8C03\u6574\u63D2\u4EF6 (\u9884\u89C8\u6A21\u5F0F)");
     if (this.settings.enableInPreviewMode) {
       this.registerMarkdownPostProcessor((element, context) => {
@@ -146,7 +149,7 @@ var TableColumnResizerPlugin = class extends import_obsidian.Plugin {
     document.addEventListener("mouseup", this.handleMouseUp);
   }
   // 保存表格列宽设置
-  saveTableColumnWidths(table) {
+  async saveTableColumnWidths(table) {
     const tableId = this.getTableId(table);
     const rows = table.querySelectorAll("tr");
     if (rows.length === 0)
@@ -159,9 +162,12 @@ var TableColumnResizerPlugin = class extends import_obsidian.Plugin {
         columnWidths[i] = parseInt(cell.style.width);
       }
     }
-    const savedData = this.loadDataSync();
+    // 使用缓存数据并更新
+    const savedData = this._dataCache || {};
     savedData[tableId] = columnWidths;
-    this.saveData(savedData);
+    this._dataCache = savedData;
+    // 异步保存到文件
+    await this.saveData(savedData);
   }
   // 恢复保存的列宽设置
   applySavedColumnWidths(table) {
@@ -190,8 +196,19 @@ var TableColumnResizerPlugin = class extends import_obsidian.Plugin {
     const index = parent ? Array.from(parent.children).indexOf(table) : 0;
     return `table_${truncatedContent}_${index}`;
   }
+  // 加载数据（异步）
+  async loadDataAsync() {
+    return await this.loadData() || {};
+  }
+
+  // 同步加载数据（兼容旧代码，使用缓存）
   loadDataSync() {
-    return this.loadData() || {};
+    return this._dataCache || {};
+  }
+
+  // 初始化数据缓存
+  async initDataCache() {
+    this._dataCache = await this.loadData() || {};
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
